@@ -141,11 +141,20 @@ do_start() {
   fi
 
   # Use the module's opensshd.init if available (it handles key generation etc.)
+  # Output goes to a file (not a pipe, since sshd daemonizes) so that a failed
+  # start can report why instead of just "failed to start".
+  local out_file log_before detail
+  out_file="${SSHDIR}/.start.out"
+  if [ -f "$LOG_FILE" ]; then
+    log_before=$(wc -l < "$LOG_FILE")
+  else
+    log_before=0
+  fi
   if [ -x "$INIT_SCRIPT" ]; then
-    "$INIT_SCRIPT" start >/dev/null 2>&1
+    "$INIT_SCRIPT" start >"$out_file" 2>&1
   elif [ -x "$SSHD_BIN" ]; then
     # Direct start with log redirect
-    "$SSHD_BIN" -f "$SSHD_CONFIG" -E "$LOG_FILE" >/dev/null 2>&1
+    "$SSHD_BIN" -f "$SSHD_CONFIG" -E "$LOG_FILE" >"$out_file" 2>&1
   else
     json_err "sshd binary not found"
     return 1
@@ -154,9 +163,13 @@ do_start() {
   sleep 1
   pid=$(get_pid)
   if [ -n "$pid" ]; then
+    rm -f "$out_file"
     json_ok "sshd started (pid ${pid})"
   else
-    json_err "sshd failed to start"
+    # Script output plus whatever sshd appended to its log during this start
+    detail=$({ cat "$out_file" 2>/dev/null; tail -n +"$((log_before + 1))" "$LOG_FILE" 2>/dev/null; } | tail -n 10)
+    rm -f "$out_file"
+    json_err "sshd failed to start${detail:+: $detail}"
     return 1
   fi
 }
