@@ -35,22 +35,28 @@ function debugLog(label: string, ...args: unknown[]): void {
 
 // --- Module path resolution via ksu.moduleInfo() ----------------------------
 
+// The module id is "ssh" (see module.prop). Used when the manager's bridge
+// doesn't provide moduleInfo() or returns something unexpected.
+const DEFAULT_MOD_DIR = '/data/adb/modules/ssh';
+
 let cachedModDir: string | null = null;
 
 function getModDir(): string {
     if (cachedModDir) return cachedModDir;
     if (isMock) {
-        cachedModDir = '/data/adb/modules/MagiskSSH';
+        cachedModDir = DEFAULT_MOD_DIR;
         return cachedModDir;
     }
     try {
-        const info = kernelsu.moduleInfo();
+        const raw: unknown = kernelsu.moduleInfo();
         // moduleInfo() returns a JSON string, e.g.:
         // {"moduleDir":"/data/adb/modules/ssh","id":"ssh",...}
-        const parsed = JSON.parse(info) as { moduleDir?: string };
-        cachedModDir = (parsed.moduleDir ?? '').trim() || '/data/adb/modules/MagiskSSH';
-    } catch {
-        cachedModDir = '/data/adb/modules/MagiskSSH';
+        // Some managers may hand back an already-parsed object instead.
+        const parsed = (typeof raw === 'string' ? JSON.parse(raw) : raw) as { moduleDir?: string } | null;
+        cachedModDir = (parsed?.moduleDir ?? '').trim() || DEFAULT_MOD_DIR;
+    } catch (e) {
+        console.warn('[KSU] moduleInfo() unavailable, using default module dir:', e);
+        cachedModDir = DEFAULT_MOD_DIR;
     }
     return cachedModDir;
 }
