@@ -5,6 +5,8 @@ Patch opensshd.init to use explicit config and redirect sshd logs to a file.
 Original: $SSHD  (no log output, no config)
 Patched:  $SSHD -f /data/adb/ssh/sshd_config -E /data/adb/ssh/sshd.log
           + mkdir -p /data/adb/ssh at start of start_service()
+          + chmod 600/644 on the host keys at start of start_service(), since
+            sshd ignores private keys that are accessible by others
 
 The script walks the current directory tree to find opensshd.init,
 since the GitLab source repo structure may differ from the zip layout.
@@ -13,6 +15,7 @@ import os
 import re
 import sys
 
+SSH_DIR = "/data/adb/ssh"
 LOG_FILE = "/data/adb/ssh/sshd.log"
 CONFIG_FILE = "/data/adb/ssh/sshd_config"
 
@@ -43,7 +46,11 @@ def patch_file(path):
         "start_service() {",
         "start_service() {\n    "
         "sed -Ei 's/^description=(\\[[^]]+\\][[:space:]]*)?/description=[✅Running] /g' /data/adb/modules/ssh/module.prop \n"
-        "mkdir -p $(dirname " + LOG_FILE + ")",
+        "mkdir -p $(dirname " + LOG_FILE + ")\n    "
+        # sshd ignores private host keys that are accessible by others and
+        # then exits with "no hostkeys available"; keep the modes correct.
+        "chmod 600 " + SSH_DIR + "/ssh_host_*_key 2>/dev/null\n    "
+        "chmod 644 " + SSH_DIR + "/ssh_host_*_key.pub 2>/dev/null",
         1,  # only replace first occurrence
     )
 
